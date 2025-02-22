@@ -528,6 +528,179 @@ valid users = @group1, @group2, @group3
 ## Управление доменом в ADMC
 <details>
     <summary>НАЖМИ</summary>
+    Делать все в конфигурации компьютера.
+
+  Картинку можно разместить в папке клиента заранее и настроить политику на нее, потому что сетевые папки со старта компьютер не видит и фон не прогрузится.
+    
+</details>
+
+## Реализация бекапа общей папки на сервере SRV1-HQ с использованием systemctl
+<details>
+    <summary>НАЖМИ</summary>
+Создаем скрипт:
+  
+  ```
+  vim /usr/local/bin/backup.sh
+  ```
+  
+Cкрипт:
+  ```
+#!/bin/bash
+
+# Указываем путь к исходной папке и целевому каталогу для бэкапов
+SOURCE_DIR="/opt/data/SAMBA"
+BACKUP_DIR="/var/backups"
+DATE=$(date +"%Y-%m-%d_%H%M")
+
+# Проверяем наличие каталога для бэкапов
+if [ ! -d "$BACKUP_DIR" ]; then
+  mkdir -p "$BACKUP_DIR"
+fi
+
+# Выполняем архивацию
+tar -czf "${BACKUP_DIR}/backup_${DATE}.tar.gz" "$SOURCE_DIR"
+```
+
+Делаем скрипт исполняемым:
+```
+chmod +x /usr/local/bin/backup.sh
+```
+
+Создаем файл сервис:
+```
+vim /etc/systemd/system/backup.service
+```
+
+Файл:
+```
+[Unit]
+Description=Backup service for SAMBA shared folder
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/backup.sh
+
+[Install]
+WantedBy=multi-user.target
+```
+Создаем таймер:
+```
+vim /etc/systemd/system/backup.timer
+```
+
+Таймер:
+```
+[Unit]
+Description=Run backup daily at 8 PM
+
+[Timer]
+OnCalendar=20:00
+Persistent=true
+Unit=backup.service
+
+[Install]
+WantedBy=timers.target
+```
+
+Запускаем службы:
+```
+systemctl daemon-reload
+systemctl enable backup.service backup.timer
+systemctl start backup.service backup.timer
+```
+
+</details>
+
+## Развертывание приложений в Docker на SRV2-DT
+<details>
+    <summary>НАЖМИ</summary>
+
+Устанавливаем если не установлен:
+```
+apt-get update
+apt-get install docker-ce
+```
+
+Запускаем локальный docker registry:
+```
+docker run -d -p 5000:5000 --restart=always --name registry registry:2
+docker ps
+```
+
+Создаем директорию для WEB:
+```
+mkdir ~/web-app
+cd ~/web-app
+```
+
+Создаем index.html
+```
+vim index.html
+```
+
+Файл:
+```
+<html>
+    <body>
+        <center><h1><b>WEB</b></h1></center>
+    </body>
+</html>
+```
+
+Создаем dockerfile:
+```
+vim Dockerfile
+```
+
+Файл:
+```
+FROM nginx:alpine
+
+COPY index.html /usr/share/nginx/html/index.html
+
+EXPOSE 80
+```
+
+Собираем и загружаем образ в локальный Registry:
+```
+docker build -t localhost:5000/web:1.0 .
+docker push localhost:5000/web:1.0
+curl http://localhost:5000/v2/_catalog
+```
+
+Запускаем:
+```
+docker run -d --name web -p 80:80 --restart=always localhost:5000/web:1.0
+docker ps
+```
+
+### ЕСЛИ НЕ ЗАПУСКАЕТСЯ:
+
+Проблема может быть в том что какой то другой процесс использует 80 порт, поэтому необходимо узнать это:
+```
+netstat -tuln | grep :80
+lsof -i :80
+```
+
+Останавливаем процесс:
+```
+systemctl stop название процесса
+systemctl disable название процесса
+```
+
+Если не помогло можно попробовать перенаправить контейнер с 8080 порта на 80:
+```
+docker run -d --name web -p 8080:80 --restart=always localhost:5000/web:1.0
+```
+
+### Если используем порт 8080 то в браузере вбиваем http://192.168.33.253:8080
+
+### Если 80, то http://192.168.33.253
+
+В случае успеха страница будет выглядеть так:
+
+![image](https://github.com/user-attachments/assets/21efa5a5-fcfd-4c22-94b1-a0f0f33a7054)
 
 
 </details>
