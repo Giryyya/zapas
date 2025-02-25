@@ -704,3 +704,161 @@ docker run -d --name web -p 8080:80 --restart=always localhost:5000/web:1.0
 
 
 </details>
+
+## Настройка системы централизованного мониторинга
+<details>
+    <summary>НАЖМИ</summary>
+  
+### Не работает 
+
+Устанавливаем пакеты:
+```
+apt-get update
+apt-get install postgresql17 postgresql17-contrib apache2 zabbix-server-pgsql postgresql17-server postgresql17-server-devel zabbix-agent
+```
+
+Инициализируем БД:
+```
+sudo -u postgres initdb -D /var/lib/pgsql/data
+```
+
+Запускаем Postgresql:
+```
+systemctl start postgresql
+systemctl enable postgresql
+```
+
+Подключаемся к Postgresql:
+```
+sudo -u postgres psql
+```
+
+Создаем БД и юзера:
+```
+CREATE DATABASE zabbix;
+CREATE USER zabbix WITH PASSWORD 'zabbixpwd';
+GRANT ALL PRIVILEGES ON DATABASE zabbix TO zabbix;
+\q
+```
+
+Импортируем схему Zabbix в бд:
+```
+rpm -q zabbix-server-pgsql
+sudo wget https://cdn.zabbix.com/zabbix/sources/stable/7.0/zabbix-7.0.9.tar.gz
+sudo tar -xvzf zabbix-7.0.9.tar.gz
+sudo cd zabbix-7.0.9/database/postgresql/
+cat schema.sql | sudo -u zabbix psql zabbix
+cat images.sql | sudo -u zabbix psql zabbix
+cat data.sql | sudo -u zabbix psql zabbix
+zcat /usr/share/doc/zabbix-server-pgsql/create.sql.gz | sudo -u zabbix psql zabbix
+```
+
+Проверяем БД и юзера:
+```
+sudo -u postgres psql -c "\l"
+sudo -u postgres psql -d zabbix -U zabbix -W
+```
+
+Редактируем конфиг Zabbix Server - /etc/zabbix/zabbix_server.conf:
+```
+DBHost=localhost
+DBName=zabbix
+DBUser=zabbix
+DBPassword=zabbixpwd
+```
+
+Создаем конфиг Zabbix:
+```
+cd /etc/httpd2/conf/addon.d
+vim A.zabbix.conf
+```
+
+конфиг:
+```
+<VirtualHost *:80>
+    DocumentRoot /usr/share/zabbix
+    <Directory /usr/share/zabbix>
+        Options Indexes FollowSymLinks
+        AllowOverride None
+        Require all granted
+    </Directory>
+</VirtualHost>
+```
+
+Настраиваем часовой пояс:
+```
+cd /etc/php/8.2/apache2-mod_php
+sudo pluma php.ini
+```
+
+Редактируем:
+```
+date.timezone = Europe/Moscow
+```
+
+Запускаем Zabbix:
+```
+sudo systemctl start zabbix_pgsql
+sudo systemctl enable zabbix_pgsql
+```
+
+</details>
+
+
+## Настройка веб-сервера nginx как обратного прокси-сервера на SRV1-DT
+<details>
+    <summary>НАЖМИ</summary>
+
+Устанавливаем nginx:
+```
+sudo apt update
+sudo apt install nginx
+```
+
+Создаем конфиг для www.au.team:
+```
+sudo vim /etc/nginx/sites-available/www.au.team
+```
+
+Конфиг:
+```
+server {
+    listen 80;
+    server_name www.au.team;
+
+    location / {
+        proxy_pass http://192.168.33.253:8080;  
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Включаем:
+```
+sudo ln -s /etc/nginx/sites-available.d/www.au.team /etc/nginx/sites-enabled.d/
+```
+
+Проверяем конфиг nginx:
+```
+sudo nginx -t
+```
+
+Перезапускаем:
+```
+sudo systemctl restart nginx
+```
+
+На dns сервере необходимо создать запись:
+```
+sudo samba-tool dns add 127.0.0.1 au.team www A 192.168.33.253 -U administrator
+```
+
+### Работает через 8080 порт 
+
+![image](https://github.com/user-attachments/assets/e8e65473-022f-44e6-9670-421ae9e3a969)
+
+
+</details>
